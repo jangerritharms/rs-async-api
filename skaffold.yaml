@@ -1,0 +1,15 @@
+apiVersion: skaffold/v1beta16
+kind: Config
+build:
+  artifacts:
+  - image: rs-bot
+    sync:
+      manual:
+      - src: 'src/**/*.rs'
+        dest: .
+  local:
+    push: false
+deploy:
+  kubectl:
+    manifests:
+      - k8s-*

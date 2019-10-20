@@ -1,0 +1,23 @@
+[package]
+name = "rs-bot"
+version = "0.1.0"
+authors = ["Jan-Gerrit Harms <jan.gerrit.harms@gmail.com>"]
+edition = "2018"
+
+[lib]
+name = "crytrade"
+path = "src/lib.rs"
+
+[[bin]]
+name = "trade-history"
+path = "src/bin/main.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.41"
+reqwest = { version = "0.10.0-alpha.1", features = ["json"] }
+tokio = "=0.2.0-alpha.6"
+futures = "0.1.29"
+futures-async-stream = "0.1.0-alpha.7"
+futures-util = "0.2.1"
+
