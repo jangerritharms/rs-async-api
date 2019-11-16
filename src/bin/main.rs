@@ -6,9 +6,6 @@ use crytrade::trade::{TradeAPI};
 use std::env;
 use dotenv::dotenv;
 use diesel::prelude::*;
-// use futures::stream::{self, StreamExt};
-// use futures::{future, Future, Stream};
-// use futures::{stream, Stream};
 use futures::stream::{StreamExt};
 
 struct Config {
@@ -58,9 +55,9 @@ async fn main() -> std::io::Result<()> {
         quote_currency: "EUR".to_string(),
     };
     
-    let stream = kraken.history_since_until_now(sym, 1573838847178106200);
-    let trades = stream.collect::<Vec<kraken::KrakenTrade>>().await;
-    println!("Retrieved {} trades", trades.len());
+    let stream = kraken.history(sym, 1573838847178106200).await;
+    // let trades = stream.collect::<Vec<kraken::KrakenTrade>>().await;
+    println!("Retrieved {:?} ", stream);
 
     Ok(())
 }
