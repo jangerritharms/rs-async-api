@@ -1,4 +1,5 @@
-use futures_async_stream::async_stream;
+use futures::{stream, Stream};
+use futures::stream::{StreamExt};
 use reqwest::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -44,17 +45,37 @@ impl From<KrakenTrade> for Trade {
     }
 }
 
-impl TradeAPI for Kraken {
-    // #[async_try_stream(boxed, ok = Trade, error = Box<dyn std::error::Error + Send + Sync>)]
-    #[async_stream(boxed, item = Trade)]
-    async fn history(&self, symbol: TradeSymbol) {
-        let mut query = HashMap::new();
-        query.insert("pair".to_string(), "ETHEUR".to_string());
-        let mut res: Value = self.pub_api("Trades".to_string(), query).await.expect("Couldn't fetch history");
-        let trades: Vec<KrakenTrade> = serde_json::from_value(res["result"]["XETHZEUR"].take()).unwrap();
-        
-        for trade in trades {
-            yield Trade::from(trade);
-        }
+#[derive(Debug)]
+struct ResponseStruct {
+    trades: Vec<KrakenTrade>,
+    contTimestamp: String,
+}
+
+impl Kraken {
+    pub fn history_since_until_now(&self, symbol: TradeSymbol, since: u64) -> impl Stream<Item = KrakenTrade> + '_ {
+        let init = ResponseStruct {
+            trades: Vec::new(),
+            contTimestamp: since.to_string(),
+        };
+        stream::unfold(init, move |mut state: ResponseStruct| async move {
+            if state.trades.len() == 0 {
+                let mut query = HashMap::new();
+                query.insert(String::from("pair"), String::from("ETHEUR"));
+                query.insert(String::from("since"), state.contTimestamp.clone());
+                let mut res: Value = self.pub_api(String::from("Trades"), query).await.expect("Couldn't fetch history");
+                state = ResponseStruct {
+                    trades: serde_json::from_value(res["result"]["XETHZEUR"].take()).unwrap(),
+                    contTimestamp: serde_json::from_value(res["result"]["last"].take()).unwrap(),
+                };
+                if (state.trades.len() == 0) {
+                    return None
+                } 
+            }
+            let yielded = match state.trades.pop() {
+                Some(trade) => trade,
+                None => return None
+            };
+            Some((yielded, state))
+        })
     }
 }
