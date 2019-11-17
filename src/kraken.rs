@@ -12,12 +12,14 @@ pub struct Kraken {
 }
 
 impl Kraken {
-    pub async fn pub_api<T>(
+    pub async fn pub_api<Req, Res>(
         &self,
         endpoint: String,
-        query: HashMap<String, String>,
-    ) -> Result<T>
-        where T: DeserializeOwned {
+        query: Req,
+    ) -> Result<Res>
+        where 
+        Req: Serialize + Sized,
+        Res: DeserializeOwned {
         let url = format!("{}/{}", self.base_url, endpoint);
 
         Ok(reqwest::Client::new()
@@ -25,7 +27,7 @@ impl Kraken {
             .query(&query)
             .send()
             .await?
-            .json::<T>()
+            .json::<Res>()
             .await?
         )
     }
@@ -49,9 +51,19 @@ impl From<KrakenTrade> for Trade {
 }
 
 #[derive(Debug)]
-struct ResponseStruct {
-    trades: Vec<KrakenTrade>,
-    contTimestamp: String,
+struct PaginationHelper {
+    trades: Vec<Trade>,
+    continuation: u64,
+}
+
+impl From<KrakenResponse<HistoryResponse>> for PaginationHelper {
+    fn from(mut res: KrakenResponse<HistoryResponse>) -> Self {
+        let trades: Vec<KrakenTrade> = res.result.trades.remove("XETHZEUR").unwrap();
+        PaginationHelper {
+            trades: trades.into_iter().map(|trade| Trade::from(trade)).collect(),
+            continuation: res.result.last.parse::<u64>().unwrap(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -67,40 +79,45 @@ pub struct HistoryResponse {
     last: String,
 }
 
+type Symbol = String;
+
+#[derive(Serialize)]
+pub struct HistoryRequest {
+    pair: Symbol,
+    since: u64,
+}
+
+
 impl Kraken {
-    pub async fn history(&self, symbol: TradeSymbol, since: u64) -> Result<KrakenResponse<HistoryResponse>> {
-        let mut query = HashMap::new();
-        query.insert(String::from("pair"), String::from("ETHEUR"));
-        query.insert(String::from("since"), since.to_string());
-        self.pub_api(String::from("Trades"), query).await
+    pub async fn history(&self, symbol: &TradeSymbol, since: u64) -> Result<KrakenResponse<HistoryResponse>> {
+        self.pub_api(String::from("Trades"), HistoryRequest {
+            pair: "ETHEUR".to_string(),
+            since
+        }).await
     }
 
-    // pub fn history_since_until_now(&self, symbol: TradeSymbol, since: u64) -> impl Stream<Item = KrakenTrade> + '_ {
-    //     let init = ResponseStruct {
-    //         trades: Vec::new(),
-    //         contTimestamp: since.to_string(),
-    //     };
-    //     stream::unfold(init, move |mut state: ResponseStruct| async move {
-    //         if state.trades.len() == 0 {
-    //             let mut query = HashMap::new();
-    //             query.insert(String::from("pair"), String::from("ETHEUR"));
-    //             query.insert(String::from("since"), state.contTimestamp.clone());
-    //             let mut res: HistoryResponse = self.pub_api(String::from("Trades"), query).await.expect("Couldn't fetch history");
-    //             state = ResponseStruct {
-    //                 trades: res,
-    //                 contTimestamp: serde_json::from_value(res["result"]["last"].take()).unwrap(),
-    //             };
-    //             if (state.trades.len() == 0) {
-    //                 return None
-    //             } 
-    //         }
-    //         let yielded = match state.trades.pop() {
-    //             Some(trade) => trade,
-    //             None => return None
-    //         };
-    //         Some((yielded, state))
-    //     })
-    // }
+    pub fn history_since_until_now(&self, symbol: TradeSymbol, since: u64) -> impl Stream<Item = Trade> + '_ {
+        let init = PaginationHelper {
+            trades: Vec::new(),
+            continuation: since,
+        };
+        stream::unfold(init, move |mut state: PaginationHelper| async move {
+            if state.trades.len() == 0 {
+                let symbol = TradeSymbol {
+                    base_currency: "ETH".to_string(),
+                    quote_currency: "EUR".to_string(),
+                };
+                state = PaginationHelper::from(self.history(&symbol, state.continuation).await.unwrap());
+                if (state.trades.len() == 0) {
+                    return None
+                } 
+            }
+            let yielded = match state.trades.pop() { Some(trade) => trade,
+                None => return None
+            };
+            Some((yielded, state))
+        })
+    }
 }
 
 #[cfg(test)]

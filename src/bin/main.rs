@@ -55,9 +55,9 @@ async fn main() -> std::io::Result<()> {
         quote_currency: "EUR".to_string(),
     };
     
-    let stream = kraken.history(sym, 1573838847178106200).await;
-    // let trades = stream.collect::<Vec<kraken::KrakenTrade>>().await;
-    println!("Retrieved {:?} ", stream);
+    let stream = kraken.history_since_until_now(sym, 1573838847178106200);
+    let trades = stream.collect::<Vec<Trade>>().await;
+    println!("Retrieved {:?} ", trades.len());
 
     Ok(())
 }
