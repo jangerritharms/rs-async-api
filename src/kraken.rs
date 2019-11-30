@@ -1,36 +1,11 @@
-use futures::{stream, Stream};
-use futures::stream::{StreamExt};
-use reqwest::Result;
-use serde::{Deserialize, Serialize};
-use serde::de::DeserializeOwned;
-use std::collections::HashMap;
-use serde_json::Value;
 use crate::trade::*;
+use crate::api::*;
+use futures::{stream, Stream};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
-pub struct Kraken {
-    pub base_url: String,
-}
-
-impl Kraken {
-    pub async fn pub_api<Req, Res>(
-        &self,
-        endpoint: String,
-        query: Req,
-    ) -> Result<Res>
-        where 
-        Req: Serialize + Sized,
-        Res: DeserializeOwned {
-        let url = format!("{}/{}", self.base_url, endpoint);
-
-        Ok(reqwest::Client::new()
-            .get(&url)
-            .query(&query)
-            .send()
-            .await?
-            .json::<Res>()
-            .await?
-        )
-    }
+pub struct Kraken<Client: HTTPRequest> {
+    pub client: Client,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -87,35 +62,53 @@ pub struct HistoryRequest {
     since: u64,
 }
 
-
-impl Kraken {
-    pub async fn history(&self, symbol: &TradeSymbol, since: u64) -> Result<KrakenResponse<HistoryResponse>> {
-        self.pub_api(String::from("Trades"), HistoryRequest {
-            pair: "ETHEUR".to_string(),
-            since
-        }).await
+impl<Client: HTTPRequest> Kraken<Client> {
+    pub async fn history(
+        &self,
+        _symbol: &TradeSymbol,
+        since: u64,
+    ) -> std::result::Result<KrakenResponse<HistoryResponse>, Box<dyn std::error::Error>> {
+        self.client.req(
+            String::from("Trades"),
+            HistoryRequest {
+                pair: "ETHEUR".to_string(),
+                since,
+            },
+        )
+        .await
+        .map_err(|e| e.into())
+        .map(|res| serde_json::from_str(&res).unwrap())
     }
 
-    pub fn history_since_until_now(&self, symbol: TradeSymbol, since: u64) -> impl Stream<Item = Trade> + '_ {
+    pub fn history_since_until_now(
+        &self,
+        _symbol: TradeSymbol,
+        since: u64,
+    ) -> impl Stream<Item = Trade> + '_ {
         let init = PaginationHelper {
             trades: Vec::new(),
             continuation: since,
         };
-        stream::unfold(init, move |mut state: PaginationHelper| async move {
-            if state.trades.len() == 0 {
-                let symbol = TradeSymbol {
-                    base_currency: "ETH".to_string(),
-                    quote_currency: "EUR".to_string(),
+        stream::unfold(init, move |mut state: PaginationHelper| {
+            async move {
+                if state.trades.len() == 0 {
+                    let symbol = TradeSymbol {
+                        base_currency: "ETH".to_string(),
+                        quote_currency: "EUR".to_string(),
+                    };
+                    state = PaginationHelper::from(
+                        self.history(&symbol, state.continuation).await.unwrap(),
+                    );
+                    if state.trades.len() == 0 {
+                        return None;
+                    }
+                }
+                let yielded = match state.trades.pop() {
+                    Some(trade) => trade,
+                    None => return None,
                 };
-                state = PaginationHelper::from(self.history(&symbol, state.continuation).await.unwrap());
-                if (state.trades.len() == 0) {
-                    return None
-                } 
+                Some((yielded, state))
             }
-            let yielded = match state.trades.pop() { Some(trade) => trade,
-                None => return None
-            };
-            Some((yielded, state))
         })
     }
 }
@@ -187,5 +180,76 @@ mod tests {
 
         let history: KrakenResponse<HistoryResponse> = serde_json::from_str(trade_json).unwrap();
         assert_eq!(history.result.trades.len(), 1);
+    }
+
+    use tokio::runtime::current_thread::Runtime;
+    use async_trait::async_trait;
+    use std::error::Error;
+
+    struct FakeClient {
+        response: String,
+    }
+
+    #[async_trait]
+    impl HTTPRequest for FakeClient {
+        async fn req<Req>(
+            &self,
+            _endpoint: String,
+            _query: Req,
+        ) -> std::result::Result<String, Box<dyn Error>>
+        where
+            Req: Serialize + Sized + std::marker::Sync + std::marker::Send,
+        {
+            Ok(self.response.clone())
+        }
+    }
+
+    #[test]
+    fn test_fn_history() {
+
+        let trade_json = r#"
+        {        
+            "error": [],
+            "result": {
+                "XETHZEUR": [
+                    [
+                        "138.65000",
+                        "1.55284051",
+                        1575127767.9793,
+                        "b",
+                        "l",
+                        ""
+                    ],
+                    [
+                        "138.66000",
+                        "10.00000000",
+                        1575127767.9842,
+                        "b",
+                        "l",
+                        ""
+                    ]
+                ],
+                "last": "1575145023655038533"
+            }
+        }
+        "#;
+
+        let client = FakeClient {
+            response: trade_json.to_string(),
+        };
+        let k = Kraken {
+            client
+        };
+
+        let sym = TradeSymbol {
+            base_currency: "ETH".to_string(),
+            quote_currency: "EUR".to_string(),
+        };
+    
+        let mut rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            let res = k.history(&sym, 1575127767000000000).await.unwrap();
+            assert_eq!(res.result.trades["XETHZEUR"].len(), 2)
+        });
     }
 }
