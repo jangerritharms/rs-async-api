@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use serde::Serialize;
 use std::error::Error;
-use tokio::runtime::current_thread::Runtime;
 
 
 pub struct KrakenClient {
@@ -48,6 +47,7 @@ mod tests {
     // Note this useful idiom: importing names from outer (for mod tests) scope.
     use super::*;
     use std::collections::HashMap;
+    use tokio::runtime::current_thread::Runtime;
 
     #[test]
     fn test_kraken_client_req() {
