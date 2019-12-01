@@ -3,6 +3,7 @@ use crate::trade::*;
 use futures::{stream, Stream};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use crate::error::Error;
 
 pub struct Kraken<Client: HTTPRequest> {
     pub client: Client,
@@ -74,22 +75,24 @@ pub struct Asset {
 type AssetResponse = HashMap<String,Asset>;
 
 impl<Client: HTTPRequest> Kraken<Client> {
+    
     pub async fn assets(
         &self,
-    ) -> std::result::Result<KrakenResponse<AssetResponse>, Box<dyn std::error::Error>> {
+    ) -> std::result::Result<KrakenResponse<AssetResponse>, Error> {
         let req: HashMap<String, String> = HashMap::new();
         self.client
             .req(String::from("Assets"), req)
             .await
+            .map(|res| serde_json::from_str(&res))
+            .unwrap()
             .map_err(|e| e.into())
-            .map(|res| serde_json::from_str(&res).unwrap())
     }
 
     pub async fn history(
         &self,
         _symbol: &TradeSymbol,
         since: u64,
-    ) -> std::result::Result<KrakenResponse<HistoryResponse>, Box<dyn std::error::Error>> {
+    ) -> std::result::Result<KrakenResponse<HistoryResponse>, Error> {
         self.client
             .req(
                 String::from("Trades"),
@@ -99,8 +102,9 @@ impl<Client: HTTPRequest> Kraken<Client> {
                 },
             )
             .await
+            .map(|res| serde_json::from_str(&res))
+            .unwrap()
             .map_err(|e| e.into())
-            .map(|res| serde_json::from_str(&res).unwrap())
     }
 
     pub fn history_since_until_now(
@@ -206,7 +210,6 @@ mod tests {
     }
 
     use async_trait::async_trait;
-    use std::error::Error;
     use tokio::runtime::current_thread::Runtime;
 
     struct FakeClient {
@@ -219,7 +222,7 @@ mod tests {
             &self,
             _endpoint: String,
             _query: Req,
-        ) -> std::result::Result<String, Box<dyn Error>>
+        ) -> std::result::Result<String, Error>
         where
             Req: Serialize + Sized + std::marker::Sync + std::marker::Send,
         {
