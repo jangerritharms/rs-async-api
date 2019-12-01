@@ -1,10 +1,10 @@
 use crate::api::*;
+use crate::error::Error;
 use crate::trade::*;
 use futures::{stream, Stream};
-use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use crate::error::Error;
 
 pub struct Kraken<Client: HTTPRequest> {
     pub client: Client,
@@ -64,7 +64,7 @@ pub struct HistoryRequest {
     since: u64,
 }
 
-#[derive(Debug,PartialEq,Deserialize)]
+#[derive(Debug, PartialEq, Deserialize)]
 pub struct Asset {
     altname: String,
     aclass: String,
@@ -72,27 +72,25 @@ pub struct Asset {
     display_decimals: u8,
 }
 
-type AssetResponse = HashMap<String,Asset>;
+type AssetResponse = HashMap<String, Asset>;
 
 impl<Client: HTTPRequest> Kraken<Client> {
-
     pub async fn req<Req, Res>(&self, endpoint: String, query: Req) -> Result<Res, Error>
     where
         Req: Serialize + Sized + std::marker::Sync + std::marker::Send,
-        Res: DeserializeOwned
+        Res: DeserializeOwned,
     {
-        self.client.req(endpoint, query)
+        self.client
+            .req(endpoint, query)
             .await
-            .map_or_else(|e| Err(e), |res| serde_json::from_str::<KrakenResponse<Res>>(&res).map_err(|e| e.into()))
-            .map_or_else(|err| Err(Error::JSONError(err.to_string())), |res| match res.result {
+            .and_then(|res| serde_json::from_str::<KrakenResponse<Res>>(&res).map_err(|e| e.into()))
+            .and_then(|res| match res.result {
                 Some(result) => Ok(result),
-                None => Err(Error::KrakenError(res.error[0].clone()))
+                None => Err(Error::KrakenError(res.error)),
             })
     }
-    
-    pub async fn assets(
-        &self,
-    ) -> std::result::Result<AssetResponse, Error> {
+
+    pub async fn assets(&self) -> std::result::Result<AssetResponse, Error> {
         let req: HashMap<String, String> = HashMap::new();
         self.req(String::from("Assets"), req).await
     }
@@ -103,13 +101,13 @@ impl<Client: HTTPRequest> Kraken<Client> {
         since: u64,
     ) -> std::result::Result<HistoryResponse, Error> {
         self.req(
-                String::from("Trades"),
-                HistoryRequest {
-                    pair: "ETHEUR".to_string(),
-                    since,
-                },
-            )
-            .await
+            String::from("Trades"),
+            HistoryRequest {
+                pair: "ETHEUR".to_string(),
+                since,
+            },
+        )
+        .await
     }
 
     pub fn history_since_until_now(
@@ -310,19 +308,25 @@ mod tests {
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
             let res = k.assets().await;
-            let mut expected: HashMap<String,Asset> = HashMap::new();
-            expected.insert("ADA".to_string(), Asset {
-                aclass: "currency".to_string(),
-                altname: "ADA".to_string(),
-                decimals: 8,
-                display_decimals: 6
-            });
-            expected.insert("ATOM".to_string(), Asset {
-                aclass: "currency".to_string(),
-                altname: "ATOM".to_string(),
-                decimals: 8,
-                display_decimals: 6
-            });
+            let mut expected: HashMap<String, Asset> = HashMap::new();
+            expected.insert(
+                "ADA".to_string(),
+                Asset {
+                    aclass: "currency".to_string(),
+                    altname: "ADA".to_string(),
+                    decimals: 8,
+                    display_decimals: 6,
+                },
+            );
+            expected.insert(
+                "ATOM".to_string(),
+                Asset {
+                    aclass: "currency".to_string(),
+                    altname: "ATOM".to_string(),
+                    decimals: 8,
+                    display_decimals: 6,
+                },
+            );
             assert_eq!(res, Ok(expected))
         });
     }
@@ -349,7 +353,12 @@ mod tests {
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
             let res = k.history(&sym, 1575127767000000000).await;
-            assert_eq!(res, Err(Error::KrakenError(String::from("EQuery:Unknown asset pair"))))
+            assert_eq!(
+                res,
+                Err(Error::KrakenError(vec!(String::from(
+                    "EQuery:Unknown asset pair"
+                ))))
+            )
         });
     }
 }
