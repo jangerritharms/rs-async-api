@@ -3,7 +3,7 @@ use std::error;
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
-    // KrakenError(String),
+    KrakenError(String),
     APIError(String),
     JSONError(String),
 }
