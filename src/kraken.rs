@@ -16,10 +16,7 @@ pub struct KrakenTrade(String, String, f64, String, String, String);
 impl From<KrakenTrade> for Trade {
     fn from(trade: KrakenTrade) -> Self {
         Trade {
-            symbol: TradeSymbol {
-                base_currency: "ETH".to_string(),
-                quote_currency: "EUR".to_string(),
-            },
+            pair: "ETHEUR".to_string(),
             price: trade.0.parse::<f64>().unwrap(),
             volume: trade.1.parse::<f64>().unwrap(),
             timestamp: (trade.2 * 10_000.0) as u64,
@@ -29,14 +26,23 @@ impl From<KrakenTrade> for Trade {
 
 #[derive(Debug)]
 struct PaginationHelper {
+    pair: String,
     trades: Vec<Trade>,
     continuation: u64,
 }
 
 impl From<HistoryResponse> for PaginationHelper {
     fn from(mut res: HistoryResponse) -> Self {
-        let trades: Vec<KrakenTrade> = res.trades.remove("XETHZEUR").unwrap();
+        let mut pair: String = "".to_string();
+        for key in res.trades.keys() {
+            if key != "last" {
+                pair = key.to_string();
+                break;
+            }
+        }
+        let trades: Vec<KrakenTrade> = res.trades.remove(&pair).unwrap();
         PaginationHelper {
+            pair,
             trades: trades.into_iter().map(|trade| Trade::from(trade)).collect(),
             continuation: res.last.parse::<u64>().unwrap(),
         }
@@ -90,44 +96,35 @@ impl<Client: HTTPRequest> Kraken<Client> {
             })
     }
 
-    pub async fn assets(&self) -> std::result::Result<AssetResponse, Error> {
+    pub async fn assets(&self) -> Result<AssetResponse, Error> {
         let req: HashMap<String, String> = HashMap::new();
         self.req(String::from("Assets"), req).await
     }
 
     pub async fn history(
         &self,
-        _symbol: &TradeSymbol,
+        pair: String,
         since: u64,
     ) -> std::result::Result<HistoryResponse, Error> {
-        self.req(
-            String::from("Trades"),
-            HistoryRequest {
-                pair: "ETHEUR".to_string(),
-                since,
-            },
-        )
-        .await
+        self.req(String::from("Trades"), HistoryRequest { pair, since })
+            .await
     }
 
     pub fn history_since_until_now(
         &self,
-        _symbol: TradeSymbol,
+        pair: String,
         since: u64,
     ) -> impl Stream<Item = Trade> + '_ {
         let init = PaginationHelper {
+            pair,
             trades: Vec::new(),
             continuation: since,
         };
         stream::unfold(init, move |mut state: PaginationHelper| {
             async move {
                 if state.trades.len() == 0 {
-                    let symbol = TradeSymbol {
-                        base_currency: "ETH".to_string(),
-                        quote_currency: "EUR".to_string(),
-                    };
                     state = PaginationHelper::from(
-                        self.history(&symbol, state.continuation).await.unwrap(),
+                        self.history(state.pair, state.continuation).await.unwrap(),
                     );
                     if state.trades.len() == 0 {
                         return None;
@@ -267,13 +264,9 @@ mod tests {
         };
         let k = Kraken { client };
 
-        let sym = TradeSymbol {
-            base_currency: "ETH".to_string(),
-            quote_currency: "EUR".to_string(),
-        };
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
-            let res = k.history(&sym, 1575127767000000000).await.unwrap();
+            let res = k.history("ETHEUR".to_string(), 1575127767000000000).await.unwrap();
             assert_eq!(res.trades["XETHZEUR"].len(), 2)
         });
     }
@@ -346,13 +339,9 @@ mod tests {
         };
         let k = Kraken { client };
 
-        let sym = TradeSymbol {
-            base_currency: "ETH".to_string(),
-            quote_currency: "EUR".to_string(),
-        };
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
-            let res = k.history(&sym, 1575127767000000000).await;
+            let res = k.history("ETHEUR".to_string(), 1575127767000000000).await;
             assert_eq!(
                 res,
                 Err(Error::KrakenError(vec!(String::from(

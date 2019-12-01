@@ -1,6 +1,7 @@
 #![feature(stmt_expr_attributes, proc_macro_hygiene)]
 use crytrade::kraken;
-use crytrade::trade::{Trade, TradeSymbol};
+use crytrade::api;
+use crytrade::trade::{Trade};
 use crytrade::repo::*;
 use crytrade::trade::{TradeAPI};
 use std::env;
@@ -47,15 +48,14 @@ async fn main() -> std::io::Result<()> {
     //     }
     // };
 
-    let kraken = kraken::Kraken {
+    let client = api::KrakenClient {
         base_url: "https://api.kraken.com/0/public".to_string(),
     };
-    let sym = TradeSymbol {
-        base_currency: "ETH".to_string(),
-        quote_currency: "EUR".to_string(),
+    let kraken = kraken::Kraken {
+        client,
     };
     
-    let stream = kraken.history_since_until_now(sym, 1573838847178106200);
+    let stream = kraken.history_since_until_now("ETHEUR".to_string(), 1575100000000000000);
     let trades = stream.collect::<Vec<Trade>>().await;
     println!("Retrieved {:?} ", trades.len());
 
