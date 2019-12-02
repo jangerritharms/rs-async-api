@@ -13,13 +13,13 @@ pub struct Kraken<Client: HTTPRequest> {
 #[derive(Serialize, PartialEq, Deserialize, Debug)]
 pub struct KrakenTrade(String, String, f64, String, String, String);
 
-impl From<KrakenTrade> for Trade {
-    fn from(trade: KrakenTrade) -> Self {
+impl KrakenTrade {
+    fn to_trade(&self, pair: String) -> Trade {
         Trade {
-            pair: "ETHEUR".to_string(),
-            price: trade.0.parse::<f64>().unwrap(),
-            volume: trade.1.parse::<f64>().unwrap(),
-            timestamp: (trade.2 * 10_000.0) as u64,
+            pair,
+            price: self.0.parse::<f64>().unwrap(),
+            volume: self.1.parse::<f64>().unwrap(),
+            timestamp: (self.2 * 10_000.0) as u64,
         }
     }
 }
@@ -40,10 +40,11 @@ impl From<HistoryResponse> for PaginationHelper {
                 break;
             }
         }
-        let trades: Vec<KrakenTrade> = res.trades.remove(&pair).unwrap();
+        let mut trades: Vec<KrakenTrade> = res.trades.remove(&pair).unwrap();
+        trades.reverse();
         PaginationHelper {
-            pair,
-            trades: trades.into_iter().map(|trade| Trade::from(trade)).collect(),
+            pair: pair.clone(),
+            trades: trades.into_iter().map(|trade| trade.to_trade(pair.clone())).collect(),
             continuation: res.last.parse::<u64>().unwrap(),
         }
     }
