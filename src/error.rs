@@ -1,3 +1,4 @@
+use core::option::NoneError;
 use std::fmt;
 use std::error;
 
@@ -6,11 +7,18 @@ pub enum Error {
     KrakenError(Vec<String>),
     APIError(String),
     JSONError(String),
+    StreamError,
 }
 
 impl From<reqwest::Error> for Error {
     fn from(err: reqwest::Error) -> Error {
         Error::APIError(err.to_string())
+    }
+}
+
+impl From<Error> for NoneError {
+    fn from(err: Error) -> Self {
+        NoneError
     }
 }
 

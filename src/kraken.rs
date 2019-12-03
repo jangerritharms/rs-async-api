@@ -125,7 +125,7 @@ impl<Client: HTTPRequest> Kraken<Client> {
             async move {
                 if state.trades.len() == 0 {
                     state = PaginationHelper::from(
-                        self.history(state.pair, state.continuation).await.unwrap(),
+                        self.history(state.pair, state.continuation).await?,
                     );
                     if state.trades.len() == 0 {
                         return None;
