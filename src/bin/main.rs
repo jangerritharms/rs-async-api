@@ -7,6 +7,7 @@ use diesel::prelude::*;
 use dotenv::dotenv;
 use futures::stream::StreamExt;
 use std::env;
+use clap::{App, Arg};
 
 struct Config {
     database_url: String,
@@ -22,6 +23,26 @@ fn load_config() -> Result<Config, std::env::VarError> {
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    let matches = App::new("kraken-sync")
+        .version("1.0")
+        .about("Sync kraken trades to a database")
+        .author("Jan-Gerrit Harms")
+        .arg(Arg::with_name("pair")
+             .short("p")
+             .long("pair")
+             .value_name("PAIR")
+             .required(true)
+             .help("Pair for which trades should be synced")
+             .takes_value(true))
+        .arg(Arg::with_name("since")
+             .short("s")
+             .long("since")
+             .value_name("TIMESTAMP")
+             .required(true)
+             .help("Timestamp from which to start trade sync")
+             .takes_value(true))
+        .get_matches();
+
     let config = match load_config() {
         Ok(config) => {
             println!("Loaded configuration");
@@ -49,21 +70,22 @@ async fn main() -> std::io::Result<()> {
         base_url: "https://api.kraken.com/0/public".to_string(),
     };
     let kraken = kraken::Kraken { client };
-    let stream = kraken.history_since_until_now("ETHEUR".to_string(), 1575100000000000000);
+
+    let since = matches.value_of("since").unwrap().parse::<u64>().unwrap();
+    let pair = matches.value_of("pair").unwrap().to_string();
+
+    let stream = kraken.history_since_until_now(pair, since);
     let trades = stream
-        .then(|trade| {
-            async {
-                let new_trade: NewTradeEntity = trade.into();
-                diesel::insert_into(trades::table)
-                    .values(&new_trade)
-                    .get_result(&conn)
-                    .expect("Error saving new post")
-            }
-        })
-        .collect::<Vec<TradeEntity>>()
+        .map(|trade| trade.into())
+        .collect::<Vec<NewTradeEntity>>()
         .await;
 
-    println!("Saved {:?} ", trades.len());
+    println!("Retrieved {:?} ", trades.len());
+
+    diesel::insert_into(trades::table)
+        .values(&trades)
+        .execute(&conn)
+        .expect("Error saving new posts");
 
     Ok(())
 }
