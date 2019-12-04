@@ -8,6 +8,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@master
+      - name: Install postgres library
+        run: sudo apt-get install libpq-dev
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
