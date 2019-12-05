@@ -17,8 +17,8 @@ jobs:
         id: cache-deps
         uses: actions/cache@v1
         with:
-          path: target/debug/deps
-          key: ${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          path: target/
+          key: ${{ runner.os }}--${{ hashFiles('Cargo.lock') }}
       - uses: actions-rs/cargo@v1
         with:
           toolchain: nightly
