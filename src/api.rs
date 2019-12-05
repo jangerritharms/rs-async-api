@@ -38,6 +38,7 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
     use tokio::runtime::current_thread::Runtime;
+    use crate::error;
 
     #[test]
     fn test_kraken_client_req() {
@@ -65,8 +66,12 @@ mod tests {
 
             let query: HashMap<String, String> = HashMap::new();
             let res = c.req("get".to_string(), query).await;
+            let expected = "error sending request for url (http://foo.org/get): error trying to connect: failed to lookup address information"; 
             assert!(res.is_err(), "should result in error if url does not exist");
-            assert_eq!(res.err(), Some(Error::APIError("error sending request for url (http://foo.org/get): error trying to connect: failed to lookup address information: nodename nor servname provided, or not known".to_string())));
+            match res.err().unwrap() {
+                Error::APIError(err) => assert!(err.find(expected) != None),
+                _ => assert!(false),
+            }
         });
     }
 }
