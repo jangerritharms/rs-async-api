@@ -13,6 +13,12 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
+      - name: Cache Dependencies
+        id: cache-deps
+        uses: actions/cache@v1
+        with:
+          path: target/debug/deps
+          key: ${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
       - uses: actions-rs/cargo@v1
         with:
           toolchain: nightly
