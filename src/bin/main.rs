@@ -8,6 +8,7 @@ use dotenv::dotenv;
 use futures::stream::StreamExt;
 use std::env;
 use clap::{App, Arg};
+use log::{debug, info, error, Level};
 
 struct Config {
     database_url: String,
@@ -23,6 +24,8 @@ fn load_config() -> Result<Config, std::env::VarError> {
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    simple_logger::init_with_level(Level::Info).unwrap();
+
     let matches = App::new("kraken-sync")
         .version("1.0")
         .about("Sync kraken trades to a database")
@@ -45,23 +48,22 @@ async fn main() -> std::io::Result<()> {
 
     let config = match load_config() {
         Ok(config) => {
-            println!("Loaded configuration");
+            info!("Loaded configuration");
             config
         }
         Err(err) => {
-            println!("{:?}", err);
+            error!("{:?}", err);
             std::process::exit(1)
         }
     };
 
     let conn = match establish_connection(config.database_url) {
         Ok(conn) => {
-            println!("Connected to db");
+            info!("Connected to db");
             conn
         }
         Err(err) => {
-            println!("Couldn't connect to db");
-            println!("{}", err);
+            error!("Couldn't connect to db: {:?}", err);
             std::process::exit(2);
         }
     };
@@ -76,11 +78,14 @@ async fn main() -> std::io::Result<()> {
 
     let stream = kraken.history_since_until_now(pair, since);
     let trades = stream
-        .map(|trade| trade.into())
+        .map(|trade| {
+            debug!("Received Trade: {:?}", trade);
+            trade.into()
+        })
         .collect::<Vec<NewTradeEntity>>()
         .await;
 
-    println!("Retrieved {:?} ", trades.len());
+    info!("Retrieved {:?} ", trades.len());
 
     diesel::insert_into(trades::table)
         .values(&trades)
