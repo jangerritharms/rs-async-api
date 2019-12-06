@@ -5,6 +5,7 @@ use futures::{stream, Stream};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use log::{debug,info};
 
 pub struct Kraken<Client: HTTPRequest> {
     pub client: Client,
@@ -65,7 +66,7 @@ pub struct HistoryResponse {
 
 type Symbol = String;
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct HistoryRequest {
     pair: Symbol,
     since: u64,
@@ -84,9 +85,10 @@ type AssetResponse = HashMap<String, Asset>;
 impl<Client: HTTPRequest> Kraken<Client> {
     pub async fn req<Req, Res>(&self, endpoint: String, query: Req) -> Result<Res, Error>
     where
-        Req: Serialize + Sized + std::marker::Sync + std::marker::Send,
+        Req: Serialize + Sized + std::marker::Sync + std::marker::Send + std::fmt::Debug,
         Res: DeserializeOwned,
     {
+        info!("Request to endpoint {:?} with query {:?}", endpoint, query);
         self.client
             .req(endpoint, query)
             .await
