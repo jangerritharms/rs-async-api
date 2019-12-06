@@ -1,0 +1,31 @@
+on: [push]
+
+name: CI
+
+jobs:
+  build_and_test:
+    name: Rust project
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+      - name: Install postgres library
+        run: sudo apt-get install libpq-dev
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+      - name: Cache Dependencies
+        id: cache-deps
+        uses: actions/cache@v1
+        with:
+          path: target/
+          key: ${{ runner.os }}--${{ hashFiles('Cargo.lock') }}
+      - uses: actions-rs/cargo@v1
+        with:
+          toolchain: nightly
+          command: build
+          args: --lib --release --all-features
+      - uses: actions-rs/cargo@v1
+        with:
+          toolchain: nightly
+          command: test
+

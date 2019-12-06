@@ -1,6 +1,6 @@
 CREATE TABLE trades (
   id SERIAL PRIMARY KEY,
-  symbol VARCHAR NOT NULL,
+  pair VARCHAR NOT NULL,
   price FLOAT NOT NULL,
   volume FLOAT NOT NULL,
   timestamp BIGINT NOT NULL

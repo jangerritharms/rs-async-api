@@ -12,7 +12,7 @@ pub fn establish_connection(database_url: String) -> Result<PgConnection, Connec
 #[derive(Insertable)]
 #[table_name="trades"]
 pub struct NewTradeEntity {
-    pub symbol: String,
+    pub pair: String,
     pub price: f64,
     pub volume: f64,
     pub timestamp: i64,
@@ -21,7 +21,7 @@ pub struct NewTradeEntity {
 #[derive(Queryable, Debug)]
 pub struct TradeEntity {
     pub id: i32,
-    pub symbol: String,
+    pub pair: String,
     pub price: f64,
     pub volume: f64,
     pub timestamp: i64,
@@ -30,7 +30,7 @@ pub struct TradeEntity {
 impl From<Trade> for NewTradeEntity {
     fn from(trade: Trade) -> Self {
         NewTradeEntity {
-            symbol: String::from("ETHEUR"),
+            pair: trade.pair,
             price: trade.price,
             volume: trade.volume,
             timestamp: trade.timestamp as i64,

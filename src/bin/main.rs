@@ -1,12 +1,13 @@
 #![feature(stmt_expr_attributes, proc_macro_hygiene)]
+use crytrade::api;
 use crytrade::kraken;
-use crytrade::trade::{Trade, TradeSymbol};
 use crytrade::repo::*;
-use crytrade::trade::{TradeAPI};
-use std::env;
-use dotenv::dotenv;
+use crytrade::schema::trades;
 use diesel::prelude::*;
-use futures::stream::{StreamExt};
+use dotenv::dotenv;
+use futures::stream::StreamExt;
+use std::env;
+use clap::{App, Arg};
 
 struct Config {
     database_url: String,
@@ -16,48 +17,75 @@ fn load_config() -> Result<Config, std::env::VarError> {
     dotenv().ok();
 
     Ok(Config {
-        database_url: env::var("DATABASE_URL")?
+        database_url: env::var("DATABASE_URL")?,
     })
 }
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    use crytrade::schema::trades;
+    let matches = App::new("kraken-sync")
+        .version("1.0")
+        .about("Sync kraken trades to a database")
+        .author("Jan-Gerrit Harms")
+        .arg(Arg::with_name("pair")
+             .short("p")
+             .long("pair")
+             .value_name("PAIR")
+             .required(true)
+             .help("Pair for which trades should be synced")
+             .takes_value(true))
+        .arg(Arg::with_name("since")
+             .short("s")
+             .long("since")
+             .value_name("TIMESTAMP")
+             .required(true)
+             .help("Timestamp from which to start trade sync")
+             .takes_value(true))
+        .get_matches();
 
     let config = match load_config() {
         Ok(config) => {
             println!("Loaded configuration");
             config
-        },
+        }
         Err(err) => {
             println!("{:?}", err);
             std::process::exit(1)
         }
     };
 
-    // let conn = match establish_connection(config.database_url) {
-    //     Ok(conn) => {
-    //         println!("Connected to db");
-    //         conn
-    //     },
-    //     Err(err) => {
-    //         println!("Couldn't connect to db");
-    //         println!("{}", err);
-    //         std::process::exit(2);
-    //     }
-    // };
+    let conn = match establish_connection(config.database_url) {
+        Ok(conn) => {
+            println!("Connected to db");
+            conn
+        }
+        Err(err) => {
+            println!("Couldn't connect to db");
+            println!("{}", err);
+            std::process::exit(2);
+        }
+    };
 
-    let kraken = kraken::Kraken {
+    let client = api::KrakenClient {
         base_url: "https://api.kraken.com/0/public".to_string(),
     };
-    let sym = TradeSymbol {
-        base_currency: "ETH".to_string(),
-        quote_currency: "EUR".to_string(),
-    };
-    
-    let stream = kraken.history_since_until_now(sym, 1573838847178106200);
-    let trades = stream.collect::<Vec<Trade>>().await;
+    let kraken = kraken::Kraken { client };
+
+    let since = matches.value_of("since").unwrap().parse::<u64>().unwrap();
+    let pair = matches.value_of("pair").unwrap().to_string();
+
+    let stream = kraken.history_since_until_now(pair, since);
+    let trades = stream
+        .map(|trade| trade.into())
+        .collect::<Vec<NewTradeEntity>>()
+        .await;
+
     println!("Retrieved {:?} ", trades.len());
+
+    diesel::insert_into(trades::table)
+        .values(&trades)
+        .execute(&conn)
+        .expect("Error saving new posts");
 
     Ok(())
 }
